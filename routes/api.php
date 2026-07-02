@@ -250,8 +250,23 @@ Route::middleware('auth:sanctum')->group(function () {
     | Driver Routes
     |--------------------------------------------------------------------------
     */
+ Route::get('/', [DeliveryController::class, 'index']);
 
+       Route::post('/deliveries', [DeliveryController::class, 'store']);
+       
+       
+       //Route::post('/deliveries', [DeliveryController::class, 'store']);
+    //Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
+    Route::put('/deliveries/{delivery}/status', [DeliveryController::class, 'updateStatus']);
+    Route::delete('/deliveries/{delivery}', [DeliveryController::class, 'destroy']);
+    Route::post('/deliveries/{delivery}/assign', [DeliveryController::class, 'assignDriver']);
+    Route::get('/deliveries/my', [DeliveryController::class, 'myDeliveries']);
+    
+    // NEW ROUTES
+    Route::get('/deliveries/available-retailers', [DeliveryController::class, 'getAvailableRetailers']);
+    Route::post('/deliveries/by-retailer', [DeliveryController::class, 'assignByRetailer']);
       Route::middleware('role:driver')->group(function () {
+
 
         /*
         |--------------------------------------------------------------------------
@@ -287,13 +302,12 @@ Route::middleware('auth:sanctum')->group(function () {
            // Route::apiResource('deliveries', DeliveryController::class);
             
            //Route::put('/deliveries/{delivery}/assign-driver', [DeliveryController::class, 'assignDriver']);
-           //  Route::get('/', [DeliveryController::class, 'index']);
+            
     
            
+   /*
 
-       Route::post('/', [DeliveryController::class, 'store']);
-
-// ✅ MUST be before {delivery}
+//  ✅ MUST be before {delivery}
 Route::get('/deliveries/my', [DeliveryController::class, 'myDeliveries']);
 
 Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
@@ -306,7 +320,10 @@ Route::put('/deliveries/{delivery}/status', [DeliveryController::class, 'updateS
 // Assign driver route
 Route::post('/deliveries/{delivery}/assign', [DeliveryController::class, 'assignDriver']);
     });
+    */
+
     
-    
+
+    });
 
 });

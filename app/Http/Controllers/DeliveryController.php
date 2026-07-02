@@ -14,64 +14,136 @@ class DeliveryController extends Controller
     /**
      * List all deliveries grouped by retailer
      */
-    public function index(Request $request)
-    {
-        $perPage = $request->input('per_page', 50);
-        
-        $deliveries = Delivery::query()
-            ->with([
-                'order.retailer.retailer',
-                'driver.user',
-                'assignedBy'
-            ])
-            ->latest()
-            ->paginate($perPage);
+  public function index(Request $request)
+{
+    $perPage = $request->input('per_page', 50);
 
-        $grouped = $deliveries->getCollection()
-            ->groupBy(fn ($delivery) => $delivery->order->retailer_id)
-            ->map(function ($deliveries) {
-                $user = $deliveries->first()->order->retailer;
-                $retailer = $user->retailer;
+    $deliveries = Delivery::with([
+        'driver.user',
+        'assignedBy',
+        'order.retailer.retailer',
+        'order.items.product.images',
+        'order.items.product.primaryImage',
+    ])
+    ->latest()
+    ->paginate($perPage);
 
-                return [
-                    'retailer_id' => $user->id,
-                    'name' => $user->name,
-                    'phone' => $user->phone,
-                    'shop_name' => $retailer?->shop_name,
-                    'address' => $retailer?->address,
-                    'city' => $retailer?->city,
-                    'orders_count' => $deliveries->count(),
-                    'orders' => $deliveries->map(function ($delivery) {
-                        return $this->formatDelivery($delivery);
-                    })->values()
-                ];
-            })
-            ->values();
+    $grouped = $deliveries->getCollection()
+        ->groupBy(fn ($delivery) => $delivery->order->retailer_id)
+        ->map(function ($deliveries) {
 
-        return response()->json([
-            'data' => $grouped,
-            'meta' => [
-                'current_page' => $deliveries->currentPage(),
-                'last_page' => $deliveries->lastPage(),
-                'per_page' => $deliveries->perPage(),
-                'total' => $deliveries->total(),
-            ]
-        ]);
-    }
+            $user = $deliveries->first()->order->retailer;
+            $retailer = $user->retailer;
+
+            // Get the assigned delivery for this retailer (if any)
+           $assignedDelivery = $deliveries->first(function ($delivery) {
+    return !is_null($delivery->driver_id);
+});
+
+            return [
+                'retailer_id' => $user->id,
+                'name' => $user->name,
+                'phone' => $user->phone,
+                'shop_name' => $retailer?->shop_name,
+                'address' => $retailer?->address,
+                'city' => $retailer?->city,
+
+                'orders_count' => $deliveries->count(),
+                'delivery_fee_sum' => $deliveries->sum(fn ($d) => $d->order->delivery_fee),
+                'subtotal_sum' => $deliveries->sum(fn ($d) => $d->order->subtotal),
+
+                // Whether this retailer has a driver assigned
+                'is_assigned' => $assignedDelivery !== null,
+
+                // Driver assigned to this retailer
+                'driver' => $assignedDelivery ? [
+                    'id' => $assignedDelivery->driver->id,
+                    'name' => $assignedDelivery->driver->user?->name,
+                    'phone' => $assignedDelivery->driver->user?->phone,
+                    'email' => $assignedDelivery->driver->user?->email,
+                ] : null,
+
+                'orders' => $deliveries->map(function ($delivery) {
+
+                    $order = $delivery->order;
+
+                    return [
+                        'delivery_id' => $delivery->id,
+                        'order_id' => $order->id,
+                        'status' => $order->status,
+                        'subtotal' => $order->subtotal,
+                        'delivery_fee' => $order->delivery_fee,
+                        'total' => $order->total,
+                        'created_at' => $order->created_at,
+
+                        'assigned_by' => $delivery->assignedBy ? [
+                            'id' => $delivery->assignedBy->id,
+                            'name' => $delivery->assignedBy->name,
+                        ] : null,
+
+                        'products' => $order->items->map(function ($item) {
+                            return [
+                                'id' => $item->id,
+                                'quantity' => $item->quantity,
+                                'price' => $item->price,
+
+                                'product' => [
+                                    'id' => $item->product->id,
+                                    'name' => $item->product->name,
+                                    'description' => $item->product->description,
+                                    'price' => $item->product->price,
+                                    'primary_image' => $item->product->primaryImage,
+                                    'images' => $item->product->images,
+                                ],
+                            ];
+                        })->values(),
+                    ];
+                })->values(),
+            ];
+        })
+        ->values();
+
+    return response()->json([
+        'data' => $grouped,
+        'meta' => [
+            'current_page' => $deliveries->currentPage(),
+            'last_page' => $deliveries->lastPage(),
+            'per_page' => $deliveries->perPage(),
+            'total' => $deliveries->total(),
+        ],
+    ]);
+}
+
+
 
     /**
-     * Assign delivery to the currently logged-in driver
+     * Assign delivery (supports both single order and retailer batch)
      */
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'order_id' => 'required|exists:orders,id'
+            'assign_type' => 'required|in:single,retailer',
+            'order_id' => 'required_if:assign_type,single|exists:orders,id',
+            'retailer_id' => 'required_if:assign_type,retailer|exists:users,id|exists:retailers,user_id',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        // Route to appropriate assignment method
+        if ($request->assign_type === 'retailer') {
+            return $this->assignByRetailer($request);
+        }
+
+        return $this->assignSingleOrder($request);
+    }
+
+    /**
+     * Assign single order to driver
+     */
+    private function assignSingleOrder(Request $request)
+    {
         return DB::transaction(function () use ($request) {
             $order = Order::lockForUpdate()->findOrFail($request->order_id);
 
@@ -92,7 +164,7 @@ class DeliveryController extends Controller
                 ], 403);
             }
 
-            // Check if driver is available (optional)
+            // Check if driver is available
             if ($driver->status !== 'available') {
                 return response()->json([
                     'message' => 'Driver is not available for new deliveries.'
@@ -113,6 +185,134 @@ class DeliveryController extends Controller
                 'data' => $this->formatDelivery($delivery->load('driver.user'))
             ], 201);
         });
+    }
+
+    /**
+     * Assign all pending orders from a retailer to the driver
+     */
+    public function assignByRetailer(Request $request)
+    {
+        return DB::transaction(function () use ($request) {
+            // Get authenticated driver
+            $user = Auth::user();
+            $driver = $user->driver;
+
+            if (!$driver) {
+                return response()->json([
+                    'message' => 'Driver profile not found. Please complete your driver profile first.'
+                ], 403);
+            }
+
+            // Check if driver is available
+            if ($driver->status !== 'available') {
+                return response()->json([
+                    'message' => 'Driver is not available for new deliveries.'
+                ], 422);
+            }
+
+            // Get retailer details
+            $retailer = \App\Models\User::with('retailer')
+                ->find($request->retailer_id);
+
+            if (!$retailer || !$retailer->retailer) {
+                return response()->json([
+                    'message' => 'Retailer not found.'
+                ], 404);
+            }
+
+            // Find all pending orders for this retailer (without deliveries)
+            $orders = Order::where('retailer_id', $request->retailer_id)
+                ->where('status', 'pending')
+                ->whereDoesntHave('delivery')
+                ->lockForUpdate()
+                ->get();
+
+            if ($orders->isEmpty()) {
+                return response()->json([
+                    'message' => 'No pending orders available for this retailer.'
+                ], 404);
+            }
+
+            // Create deliveries for all orders
+            $assignedCount = 0;
+            $deliveries = [];
+
+            foreach ($orders as $order) {
+                $delivery = Delivery::create([
+                    'order_id' => $order->id,
+                    'driver_id' => $driver->id,
+                    'assigned_by' => auth()->id(),
+                    'status' => 'assigned',
+                ]);
+
+                $order->update(['status' => 'confirmed']);
+                
+                $deliveries[] = $this->formatDelivery(
+                    $delivery->load(['order.retailer.retailer', 'driver.user'])
+                );
+                $assignedCount++;
+            }
+
+            return response()->json([
+                'message' => "Successfully assigned {$assignedCount} orders from {$retailer->name}.",
+                'data' => [
+                    'retailer' => [
+                        'id' => $retailer->id,
+                        'name' => $retailer->name,
+                        'shop_name' => $retailer->retailer->shop_name,
+                        'address' => $retailer->retailer->address,
+                        'phone' => $retailer->phone,
+                    ],
+                    'driver' => [
+                        'id' => $driver->id,
+                        'name' => $user->name,
+                    ],
+                    'orders_assigned' => $assignedCount,
+                    'deliveries' => $deliveries
+                ]
+            ], 201);
+        });
+    }
+
+    /**
+     * Get retailers with available orders for drivers
+     */
+    public function getAvailableRetailers(Request $request)
+    {
+        $retailers = Order::where('status', 'pending')
+            ->whereDoesntHave('delivery')
+            ->with(['retailer.retailer'])
+            ->get()
+            ->groupBy('retailer_id')
+            ->map(function ($orders) {
+                $retailer = $orders->first()->retailer;
+                return [
+                    'retailer_id' => $retailer->id,
+                    'name' => $retailer->name,
+                    'shop_name' => $retailer->retailer->shop_name ?? 'N/A',
+                    'address' => $retailer->retailer->address ?? 'N/A',
+                    'city' => $retailer->retailer->city ?? 'N/A',
+                    'phone' => $retailer->phone,
+                    'pending_orders_count' => $orders->count(),
+                    'total_amount' => $orders->sum('total_price'),
+                    'orders' => $orders->map(function ($order) {
+                        return [
+                            'order_id' => $order->id,
+                            'order_number' => $order->order_number,
+                            'total_price' => $order->total_price,
+                            'delivery_fee' => $order->delivery_fee,
+                            'created_at' => $order->created_at->toDateTimeString()
+                        ];
+                    })
+                ];
+            })
+            ->values()
+            ->sortByDesc('pending_orders_count')
+            ->values();
+
+        return response()->json([
+            'data' => $retailers
+        ]);
     }
 
     /**
@@ -316,8 +516,8 @@ class DeliveryController extends Controller
     }
 
     /**
-     * Format delivery response
-     */
+     * Format delivery response */
+    
     private function formatDelivery(Delivery $delivery): array
     {
         return [
@@ -351,10 +551,8 @@ class DeliveryController extends Controller
                 'updated_at' => $delivery->updated_at,
             ]
         ];
-    }
+   } 
 }
-
-
 
 
 
