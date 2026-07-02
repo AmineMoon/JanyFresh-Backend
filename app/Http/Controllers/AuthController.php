@@ -82,48 +82,65 @@ public function registerRetailer(Request $request)
 
 
 
-
 public function registerDriver(Request $request)
 {
-    // VALIDATION
+    // Validate request
     $validated = $request->validate([
-        'name' => ['required', 'string', 'max:255'],
-        'email' => ['required', 'email', 'unique:users,email'],
-        'password' => ['required', 'string', 'min:6'],
-        'phone' => ['nullable', 'string', 'max:20'],
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email',
+        'password' => 'required|string|min:6',
+        'phone' => 'nullable|string|max:20',
+        'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
 
-        'vehicle_type' => ['nullable', 'string', 'max:255'],
-        'license_number' => ['nullable', 'string', 'max:255'],
-        'current_location' => ['nullable', 'string'],
+        'vehicle_type' => 'nullable|string|max:255',
+        'license_number' => 'nullable|string|max:255|unique:drivers,license_number',
+        'current_location' => 'nullable|string',
     ]);
 
-    // CREATE USER
+    // Upload image
+    $imagePath = null;
+
+    if ($request->hasFile('image')) {
+        $imagePath = $request->file('image')->store('users', 'public');
+    }
+
+    // Create user
     $user = User::create([
         'name' => $validated['name'],
         'email' => $validated['email'],
         'password' => Hash::make($validated['password']),
         'phone' => $validated['phone'] ?? null,
+        'image' => $imagePath,
         'role' => 'driver',
         'is_active' => true,
     ]);
 
-    // CREATE DRIVER PROFILE
-    $driver = Driver::create([
-        'user_id' => $user->id,
+    // Create driver profile
+    $driver = $user->driver()->create([
         'vehicle_type' => $validated['vehicle_type'] ?? null,
         'license_number' => $validated['license_number'] ?? null,
-        'is_available' => true,
+        'status' => 'available',
         'current_location' => $validated['current_location'] ?? null,
     ]);
 
-    // TOKEN
+    // Create Sanctum token
     $token = $user->createToken('driver-token')->plainTextToken;
 
     return response()->json([
         'message' => 'Driver registered successfully',
         'token_type' => 'Bearer',
         'token' => $token,
-        'user' => $user,
+        'user' => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'image' => $user->image
+                ? asset('storage/' . $user->image)
+                : null,
+            'role' => $user->role,
+            'is_active' => $user->is_active,
+        ],
         'driver' => $driver,
     ], 201);
 }

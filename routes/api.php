@@ -272,6 +272,7 @@ Route::middleware('auth:sanctum')->group(function () {
         */
        
         Route::get('/driver/status', [OrderController::class, 'status']);
+       
         Route::get('/driver/order_info', [OrderController::class, 'order_info']);
         Route::get('/driver/orders/{order}', [OrderController::class, 'show']);
 
@@ -283,7 +284,27 @@ Route::middleware('auth:sanctum')->group(function () {
         |--------------------------------------------------------------------------
         */
 
-        // Route::apiResource('deliveries', DeliveryController::class);
+           // Route::apiResource('deliveries', DeliveryController::class);
+            
+           //Route::put('/deliveries/{delivery}/assign-driver', [DeliveryController::class, 'assignDriver']);
+           //  Route::get('/', [DeliveryController::class, 'index']);
+    
+           
+
+       Route::post('/', [DeliveryController::class, 'store']);
+
+// ✅ MUST be before {delivery}
+Route::get('/deliveries/my', [DeliveryController::class, 'myDeliveries']);
+
+Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
+
+Route::delete('/{delivery}', [DeliveryController::class, 'destroy']);
+
+// Status update route
+Route::put('/deliveries/{delivery}/status', [DeliveryController::class, 'updateStatus']);
+
+// Assign driver route
+Route::post('/deliveries/{delivery}/assign', [DeliveryController::class, 'assignDriver']);
     });
     
     

@@ -6,15 +6,15 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
+   
+     // Run the migrations.
+    
     public function up(): void
     {
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('order_id')
+            /* $table->foreignId('order_id')
                 ->constrained()
                 ->cascadeOnDelete();
 
@@ -25,7 +25,7 @@ return new class extends Migration
 
             $table->enum('status', ['pending', 'paid'])
                 ->default('pending');
-
+ */
             $table->timestamps();
         });
     }

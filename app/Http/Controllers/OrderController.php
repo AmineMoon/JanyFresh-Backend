@@ -189,21 +189,24 @@ public function confirm(Order $order)
 
 
 
+
 public function order_info()
 {
     $retailers = Retailer::with([
         'user',
         'orders.items.product.images',
-        'orders.items.product.primaryImage'
+        'orders.items.product.primaryImage',
     ])
+    ->has('orders')
     ->withCount('orders')
-    ->has('orders') // Only retailers that have orders
+    ->withSum('orders', 'delivery_fee')
+    ->withSum('orders', 'subtotal')
     ->get();
 
     return response()->json($retailers);
 }
 
-
+  
 
 
 }

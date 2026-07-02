@@ -33,7 +33,7 @@ return new class extends Migration
             */
 
             $table->string('shop_name')->nullable();
-
+             $table->string('image') ->nullable();
             $table->string('address')
                 ->nullable();
 

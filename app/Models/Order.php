@@ -1,7 +1,9 @@
 <?php
 
 namespace App\Models;
-
+use App\Models\Product;
+use App\Models\Order;
+use App\Models\Retailer;
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model

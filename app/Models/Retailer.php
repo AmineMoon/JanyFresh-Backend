@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
 use App\Models\favorites;
+use App\Models\Order;
 
 class Retailer extends Model
 {
@@ -48,9 +49,8 @@ class Retailer extends Model
     return $this->hasMany(Favorite::class);
     }
 
-    public function orders()
-    {
-        return $this->hasMany(Order::class);
-    }
-
+   public function orders()
+{
+    return $this->hasMany(Order::class, 'retailer_id', 'user_id');
+}
 }
