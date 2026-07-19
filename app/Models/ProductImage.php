@@ -19,6 +19,31 @@ class ProductImage extends Model
         'is_primary' => 'boolean',
     ];
 
+    // Include both 'url' (for frontend compatibility) and 'image_url' (for consistency)
+    protected $appends = ['image_url', 'url'];
+
+    // ✅ Accessor: returns full absolute URL for the stored image
+    // Frontend uses 'url' field
+    public function getUrlAttribute()
+    {
+        if (empty($this->image_path)) {
+            return null;
+        }
+
+        // If the path is already a full URL, return as-is
+        if (filter_var($this->image_path, FILTER_VALIDATE_URL)) {
+            return $this->image_path;
+        }
+
+        return asset('storage/' . ltrim($this->image_path, '/'));
+    }
+
+    // Alias for consistency
+    public function getImageUrlAttribute()
+    {
+        return $this->url;
+    }
+
     // ✅ Relationship
 
     public function product()

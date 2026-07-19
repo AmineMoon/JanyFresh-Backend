@@ -19,21 +19,19 @@ class ProductController extends Controller
             $query->where('name', 'like', '%' . $request->search . '%');
         }
 
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->filled('subcategory_id')) {
+            $query->where('subcategory_id', $request->subcategory_id);
+        }
+
         $products = $query->latest()->paginate(10);
 
-
+        // The 'url' accessor is automatically included via $appends in ProductImage model
+        // No manual transformation needed - the accessor handles it
         
-        // Fix image URLs
-        $products->getCollection()->transform(function ($product) {
-
-            $product->images->transform(function ($img) {
-                $img->url = asset('storage/' . $img->image_path);
-                return $img;
-            });
-
-            return $product;
-        });
-
         return response()->json($products);
     }
 
@@ -95,7 +93,10 @@ class ProductController extends Controller
     // SHOW PRODUCT
     public function show(Product $product)
     {
-        return $product->load(['images', 'category', 'subcategory']);
+        $product->load(['images', 'category', 'subcategory']);
+
+        // The 'url' accessor is automatically included via $appends in ProductImage model
+        return $product;
     }
 
     // UPDATE PRODUCT

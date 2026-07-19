@@ -1,18 +1,17 @@
 <?php
 
 namespace App\Models;
-use App\Models\Product;
-use App\Models\Order;
-use App\Models\Retailer;
+
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
     protected $fillable = [
-       'order_number',
+        'order_number',
         'retailer_id',
         'confirmed_by',
         'status',
+        'cancellation_deadline',
         'subtotal',
         'discount',
         'delivery_fee',
@@ -20,12 +19,28 @@ class Order extends Model
         'total',
     ];
 
+    protected $casts = [
+        'cancellation_deadline' => 'datetime',
+    ];
+
+    protected $appends = ['can_cancel'];
+
+    /**
+     * Determine if the order can still be cancelled by the retailer
+     */
+    public function getCanCancelAttribute(): bool
+    {
+        return $this->status === 'pending' 
+            && $this->cancellation_deadline 
+            && now()->lessThan($this->cancellation_deadline);
+    }
+
     /**
      * Retailer who created the order
      */
     public function retailer()
     {
-        return $this->belongsTo(User::class, 'retailer_id');
+        return $this->belongsTo(Retailer::class, 'retailer_id');
     }
 
     /**
@@ -52,22 +67,19 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
-     /**
+    /**
      * Delivery
      */
-
-
     public function delivery()
-   {
-    return $this->hasOne(Delivery::class);
+    {
+        return $this->hasOne(Delivery::class);
+    }
 
-   }
-
-     
-   public function payment()
-{
-    return $this->hasOne(Payment::class);
-}
-
-
+    /**
+     * Payment
+     */
+    public function payment()
+    {
+        return $this->hasOne(Payment::class);
+    }
 }

@@ -100,6 +100,68 @@ class AdminController extends Controller
     }
 
     /**
+     * Show current admin profile (self-service)
+     */
+    public function showProfile(Request $request)
+    {
+        $user = $request->user();
+        $admin = Admin::where('user_id', $user->id)->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'user' => $user,
+                'admin' => $admin,
+            ],
+        ]);
+    }
+
+    /**
+     * Update current admin profile (self-service)
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+        $admin = Admin::where('user_id', $user->id)->first();
+
+        if (!$admin) {
+            return response()->json(['message' => 'Admin profile not found'], 404);
+        }
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|email|unique:users,email,' . $user->id,
+            'phone' => 'sometimes|nullable|string|max:20',
+            'position' => 'sometimes|nullable|string|max:255',
+        ]);
+
+        if (isset($validated['name'])) {
+            $user->name = $validated['name'];
+        }
+        if (isset($validated['email'])) {
+            $user->email = $validated['email'];
+        }
+        if (array_key_exists('phone', $validated)) {
+            $user->phone = $validated['phone'];
+        }
+        $user->save();
+
+        if (array_key_exists('position', $validated)) {
+            $admin->position = $validated['position'];
+            $admin->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully',
+            'data' => [
+                'user' => $user->fresh(),
+                'admin' => $admin->fresh(),
+            ],
+        ]);
+    }
+
+    /**
      * Delete admin
      */
     public function destroy(string $id)

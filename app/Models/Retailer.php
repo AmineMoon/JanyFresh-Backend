@@ -4,9 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\User;
-use App\Models\favorites;
-use App\Models\Order;
 
 class Retailer extends Model
 {
@@ -24,7 +21,6 @@ class Retailer extends Model
         'city',
         'image',
         'age',
-       
     ];
 
     /**
@@ -32,25 +28,33 @@ class Retailer extends Model
      */
     protected $casts = [
         'age' => 'integer',
-         
     ];
 
     /* =========================
        RELATIONSHIPS
     ========================== */
 
+    /**
+     * The user account this retailer belongs to
+     */
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-    public function favorites()
-   {
-    return $this->hasMany(Favorite::class);
+    /**
+     * Orders placed by this retailer
+     */
+    public function orders()
+    {
+        return $this->hasMany(Order::class, 'retailer_id');
     }
 
-   public function orders()
-{
-    return $this->hasMany(Order::class, 'retailer_id', 'user_id');
-}
+    /**
+     * Favorites saved by this retailer
+     */
+    public function favorites()
+    {
+        return $this->hasMany(Favorite::class);
+    }
 }

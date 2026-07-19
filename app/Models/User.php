@@ -95,11 +95,15 @@ class User extends Authenticatable
         return $this->hasMany(Post::class);
     }
 
-    public function orders()
-   {
-    return $this->hasMany(Order::class);
+    public function retailerOrders()
+    {
+        return $this->hasManyThrough(Order::class, Retailer::class);
     }
 
+      public function isAdmin(): bool
+{
+    return $this->role === 'admin';
+}
 
 }
 
