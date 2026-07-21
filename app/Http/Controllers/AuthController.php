@@ -20,13 +20,11 @@ public function registerRetailer(Request $request)
         'phone' => 'nullable|string|max:10',
         'email' => 'required|email|unique:users,email',
         'password' => 'required|string|min:6',
-        
-        /*
         'shop_name' => 'nullable|string|max:255',
         'address' => 'nullable|string',
         'city' => 'nullable|string',
-        'image' => 'nullable|image|max:3200',
-        'age' => 'nullable|integer',*/
+        'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+        'age' => 'nullable|integer',
     ]);
 
     // 2. CREATE USER

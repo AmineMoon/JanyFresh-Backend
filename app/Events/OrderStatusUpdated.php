@@ -52,6 +52,7 @@ class OrderStatusUpdated implements ShouldBroadcast
             'previous_status' => $this->previousStatus,
             'retailer_id' => $this->order->retailer_id,
             'total' => (float) $this->order->total,
+            'can_cancel' => $this->order->can_cancel,
             'cancellation_deadline' => $this->order->cancellation_deadline?->toIso8601String(),
             'updated_at' => now()->toIso8601String(),
         ];

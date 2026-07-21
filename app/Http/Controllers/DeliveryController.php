@@ -6,8 +6,8 @@ use App\Models\Delivery;
 use App\Models\Order;
 use App\Models\Retailer;
 use App\Events\OrderAssigned;
-use App\Events\DeliveryStatusUpdated;
 use App\Events\OrderStatusUpdated;
+use App\Events\DeliveryStatusUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -140,7 +140,6 @@ class DeliveryController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Route to appropriate assignment method
         if ($request->assign_type === 'retailer') {
             return $this->assignByRetailer($request);
         }
@@ -156,24 +155,27 @@ class DeliveryController extends Controller
         return DB::transaction(function () use ($request) {
             $order = Order::lockForUpdate()->findOrFail($request->order_id);
 
-            // Check if order already has a delivery
+            if ($order->status !== Order::STATUS_AVAILABLE) {
+                return response()->json([
+                    'message' => 'Order is not available for assignment.'
+                ], 422);
+            }
+
             if ($order->delivery) {
                 return response()->json([
                     'message' => 'Order already has a delivery assigned.'
                 ], 422);
             }
 
-            // Get the authenticated driver
             $user = Auth::user();
             $driver = $user->driver;
 
             if (!$driver) {
                 return response()->json([
                     'message' => 'Driver profile not found. Please complete your driver profile first.'
-                ], 403);
+                ], 404);
             }
 
-            // Check if driver is available
             if ($driver->status !== 'available') {
                 return response()->json([
                     'message' => 'Driver is not available for new deliveries.'
@@ -184,13 +186,17 @@ class DeliveryController extends Controller
                 'order_id' => $order->id,
                 'driver_id' => $driver->id,
                 'assigned_by' => auth()->id(),
-                'status' => 'assigned',
+                'status' => Delivery::STATUS_ASSIGNED,
             ]);
 
-            $order->update(['status' => 'assigned']);
+            $previousStatus = $order->status;
+            $order->update([
+                'status' => Order::STATUS_ASSIGNED,
+                'confirmed_by' => $user->id,
+            ]);
 
-            // Broadcast assignment event
             OrderAssigned::dispatch($order->fresh(), $delivery, $driver);
+            OrderStatusUpdated::dispatch($order->fresh(), $previousStatus);
 
             return response()->json([
                 'message' => 'Delivery assigned successfully.',
@@ -200,7 +206,7 @@ class DeliveryController extends Controller
     }
 
     /**
-     * Assign all pending orders from a retailer to the driver
+     * Assign all available orders from a retailer to the driver
      */
     public function assignByRetailer(Request $request)
     {
@@ -210,24 +216,21 @@ class DeliveryController extends Controller
                 'retailer_id' => 'required|integer|exists:retailers,id'
             ]);
 
-            // Get authenticated driver
             $user = Auth::user();
             $driver = $user->driver;
 
             if (!$driver) {
                 return response()->json([
                     'message' => 'Driver profile not found. Please complete your driver profile first.'
-                ], 403);
+                ], 404);
             }
 
-            // Check if driver is available
             if ($driver->status !== 'available') {
                 return response()->json([
                     'message' => 'Driver is not available for new deliveries.'
                 ], 422);
             }
 
-            // Get retailer by retailer ID (retailers table PK)
             $retailerProfile = Retailer::find($request->retailer_id);
 
             if (!$retailerProfile) {
@@ -236,19 +239,18 @@ class DeliveryController extends Controller
                 ], 404);
             }
 
-            // Get retailer user (for name/phone in response)
             $retailer = $retailerProfile->user;
 
-            // Find all pending orders for this retailer
+            // Find all available orders for this retailer
             $orders = Order::where('retailer_id', $retailerProfile->id)
-                ->where('status', 'pending')
+                ->where('status', Order::STATUS_AVAILABLE)
                 ->whereDoesntHave('delivery')
                 ->lockForUpdate()
                 ->get();
 
             if ($orders->isEmpty()) {
                 return response()->json([
-                    'message' => 'No pending orders available for this retailer.'
+                    'message' => 'No available orders for this retailer.'
                 ], 404);
             }
 
@@ -256,18 +258,21 @@ class DeliveryController extends Controller
             $deliveries = [];
 
             foreach ($orders as $order) {
+                $previousStatus = $order->status;
 
                 $delivery = Delivery::create([
                     'order_id' => $order->id,
                     'driver_id' => $driver->id,
                     'assigned_by' => auth()->id(),
-                    'status' => 'assigned',
+                    'status' => Delivery::STATUS_ASSIGNED,
                 ]);
 
                 $order->update([
-                    'status' => 'confirmed',
-                    'confirmed_by' => $driver->id,
+                    'status' => Order::STATUS_ASSIGNED,
+                    'confirmed_by' => $user->id,
                 ]);
+
+                OrderStatusUpdated::dispatch($order->fresh(), $previousStatus);
 
                 $deliveries[] = $this->formatDelivery(
                     $delivery->load([
@@ -277,6 +282,15 @@ class DeliveryController extends Controller
                 );
 
                 $assignedCount++;
+            }
+
+            // Dispatch OrderAssigned for each order
+            foreach ($orders as $order) {
+                $freshOrder = $order->fresh();
+                $freshDelivery = $freshOrder->delivery;
+                if ($freshDelivery) {
+                    OrderAssigned::dispatch($freshOrder, $freshDelivery, $driver);
+                }
             }
 
             return response()->json([
@@ -305,7 +319,7 @@ class DeliveryController extends Controller
      */
     public function getAvailableRetailers(Request $request)
     {
-        $retailers = Order::where('status', 'pending')
+        $retailers = Order::where('status', Order::STATUS_AVAILABLE)
             ->whereDoesntHave('delivery')
             ->with(['retailer.user'])
             ->get()
@@ -320,13 +334,13 @@ class DeliveryController extends Controller
                     'address' => $retailer->address ?? 'N/A',
                     'city' => $retailer->city ?? 'N/A',
                     'phone' => $user?->phone,
-                    'pending_orders_count' => $orders->count(),
-                    'total_amount' => $orders->sum('total_price'),
+                    'available_orders_count' => $orders->count(),
+                    'total_amount' => $orders->sum('total'),
                     'orders' => $orders->map(function ($order) {
                         return [
                             'order_id' => $order->id,
                             'order_number' => $order->order_number,
-                            'total_price' => $order->total_price,
+                            'total' => $order->total,
                             'delivery_fee' => $order->delivery_fee,
                             'created_at' => $order->created_at->toDateTimeString()
                         ];
@@ -334,7 +348,7 @@ class DeliveryController extends Controller
                 ];
             })
             ->values()
-            ->sortByDesc('pending_orders_count')
+            ->sortByDesc('available_orders_count')
             ->values();
 
         return response()->json([
@@ -361,19 +375,15 @@ class DeliveryController extends Controller
      */
     public function updateStatus(Request $request, Delivery $delivery)
     {
-        // Authenticated user
         $user = Auth::user();
-
-        // Driver profile
         $driver = $user->driver;
 
         if (!$driver) {
             return response()->json([
                 'message' => 'Driver profile not found.'
-            ], 403);
+            ], 404);
         }
 
-        // Ensure the delivery belongs to the authenticated driver
         if ($delivery->driver_id !== $driver->id) {
             return response()->json([
                 'message' => 'Unauthorized. This delivery does not belong to you.'
@@ -397,29 +407,36 @@ class DeliveryController extends Controller
                 'status' => $status,
             ];
 
+            $previousOrderStatus = $delivery->order->status;
+
             switch ($status) {
-                case 'picked_up':
+                case Delivery::STATUS_PICKED_UP:
                     $updateData['picked_up_at'] = now();
                     break;
 
-                case 'in_transit':
+                case Delivery::STATUS_IN_TRANSIT:
                     $updateData['in_transit_at'] = now();
                     $delivery->order->update([
-                        'status' => 'out_for_delivery'
+                        'status' => Order::STATUS_OUT_FOR_DELIVERY
                     ]);
                     break;
 
-                case 'delivered':
+                case Delivery::STATUS_DELIVERED:
                     $updateData['delivered_at'] = now();
                     $delivery->order->update([
-                        'status' => 'delivered'
+                        'status' => Order::STATUS_DELIVERED
                     ]);
                     break;
 
-                case 'failed':
-                case 'cancelled':
+                case Delivery::STATUS_FAILED:
                     $delivery->order->update([
-                        'status' => $status
+                        'status' => Order::STATUS_FAILED
+                    ]);
+                    break;
+
+                case Delivery::STATUS_CANCELLED:
+                    $delivery->order->update([
+                        'status' => Order::STATUS_CANCELLED
                     ]);
                     break;
             }
@@ -429,11 +446,8 @@ class DeliveryController extends Controller
 
         $freshDelivery = $delivery->fresh();
         $freshOrder = $freshDelivery->order;
-        
-        // Broadcast delivery status update
+
         DeliveryStatusUpdated::dispatch($freshDelivery, $freshOrder);
-        
-        // Also broadcast order status update
         OrderStatusUpdated::dispatch($freshOrder, $freshOrder->getOriginal('status'));
 
         return response()->json([
@@ -447,7 +461,6 @@ class DeliveryController extends Controller
      */
     public function destroy(Delivery $delivery)
     {
-        // Check if user has admin role
         $user = Auth::user()->isAdmin();
         if (!$user){
             return response()->json([
@@ -476,7 +489,6 @@ class DeliveryController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Check if user has permission to assign drivers (admin/dispatcher)
         $user = Auth::user();
         if (!$user->hasRole(['admin', 'dispatcher'])) {
             return response()->json([
@@ -484,7 +496,7 @@ class DeliveryController extends Controller
             ], 403);
         }
 
-        if ($delivery->status === 'delivered') {
+        if ($delivery->status === Delivery::STATUS_DELIVERED) {
             return response()->json([
                 'message' => 'Cannot reassign a delivered order.'
             ], 422);
@@ -493,9 +505,12 @@ class DeliveryController extends Controller
         $delivery->update([
             'driver_id' => $request->driver_id,
             'assigned_by' => auth()->id(),
-            'status' => 'assigned',
+            'status' => Delivery::STATUS_ASSIGNED,
             'notes' => $request->notes
         ]);
+
+        $freshOrder = $delivery->order;
+        OrderStatusUpdated::dispatch($freshOrder, $freshOrder->getOriginal('status'));
 
         return response()->json([
             'message' => 'Driver assigned successfully.',
@@ -514,7 +529,7 @@ class DeliveryController extends Controller
         if (!$driver) {
             return response()->json([
                 'message' => 'Driver profile not found.'
-            ], 403);
+            ], 404);
         }
 
         $perPage = $request->input('per_page', 20);
@@ -564,7 +579,7 @@ class DeliveryController extends Controller
                 'id' => $delivery->order?->id,
                 'order_number' => $delivery->order?->order_number,
                 'status' => $delivery->order?->status,
-                'total_price' => $delivery->order?->total_price,
+                'total' => $delivery->order?->total,
                 'subtotal' => $delivery->order?->subtotal,
                 'delivery_fee' => $delivery->order?->delivery_fee,
                 'retailer' => [
@@ -583,5 +598,5 @@ class DeliveryController extends Controller
                 'updated_at' => $delivery->updated_at,
             ]
         ];
-   }
+    }
 }

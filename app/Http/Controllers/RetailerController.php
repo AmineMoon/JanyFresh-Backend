@@ -48,13 +48,21 @@ class RetailerController extends Controller
             'shop_name' => 'required|string|max:255',
             'address' => 'nullable|string|max:500',
             'city' => 'nullable|string|max:20',
+            'age' => 'nullable|integer',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
+
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('users', 'public');
+        }
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             'phone' => $validated['phone'] ?? null,
+            'image' => $imagePath,
             'role' => 'retailer',
         ]);
 
@@ -63,6 +71,7 @@ class RetailerController extends Controller
             'shop_name' => $validated['shop_name'],
             'address' => $validated['address'] ?? null,
             'city' => $validated['city'] ?? null,
+            'age' => $validated['age'] ?? null,
         ]);
 
         return response()->json([
@@ -70,7 +79,7 @@ class RetailerController extends Controller
             'message' => 'Retailer created successfully',
             'data' => [
                 'id' => $user->id,
-                'user' => $user,
+                'user' => $user->fresh(['retailer']),
                 'retailer' => $retailer,
             ],
         ]);
@@ -136,25 +145,36 @@ class RetailerController extends Controller
         }
 
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'password' => 'sometimes|string|min:6',
-            'phone' => 'sometimes|string|max:20',
-            'shop_name' => 'sometimes|string|max:255',
-            'address' => 'sometimes|string|max:500',
-            'city' => 'sometimes|string|max:20',
+            'name' => 'sometimes|nullable|string|max:255',
+            'email' => 'sometimes|nullable|email|unique:users,email,' . $user->id,
+            'password' => 'sometimes|nullable|string|min:6',
+            'phone' => 'sometimes|nullable|string|max:20',
+            'shop_name' => 'sometimes|nullable|string|max:255',
+            'address' => 'sometimes|nullable|string|max:500',
+            'city' => 'sometimes|nullable|string|max:20',
+            'age' => 'sometimes|nullable|integer',
             'is_active' => 'sometimes|boolean',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
         if (isset($validated['name'])) $user->name = $validated['name'];
         if (isset($validated['email'])) $user->email = $validated['email'];
         if (isset($validated['phone'])) $user->phone = $validated['phone'];
         if (isset($validated['password'])) $user->password = Hash::make($validated['password']);
+
+        if ($request->hasFile('image')) {
+            if ($user->image && Storage::disk('public')->exists($user->image)) {
+                Storage::disk('public')->delete($user->image);
+            }
+            $user->image = $request->file('image')->store('users', 'public');
+        }
+
         $user->save();
 
         if (isset($validated['shop_name'])) $retailer->shop_name = $validated['shop_name'];
         if (isset($validated['address'])) $retailer->address = $validated['address'];
         if (isset($validated['city'])) $retailer->city = $validated['city'];
+        if (isset($validated['age'])) $retailer->age = $validated['age'];
         if (array_key_exists('is_active', $validated)) $user->is_active = $validated['is_active'];
         $retailer->save();
         $user->save();
@@ -195,6 +215,11 @@ class RetailerController extends Controller
         if ($retailer) {
             $retailer->delete();
         }
+
+        if ($user->image && Storage::disk('public')->exists($user->image)) {
+            Storage::disk('public')->delete($user->image);
+        }
+
         $user->delete();
 
         return response()->json([

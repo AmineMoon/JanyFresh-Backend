@@ -17,6 +17,9 @@ use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\RetailerController;
 use App\Http\Controllers\SubcategoryController;
+use App\Http\Controllers\SupportTicketController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\DeviceTokenController;
 
 /*
 |--------------------------------------------------------------------------
@@ -105,6 +108,17 @@ Route::middleware('auth:sanctum')->group(function () {
         // Delivery Tracking
         Route::get('/deliveries', [DeliveryController::class, 'index']);
         Route::get('/deliveries/{delivery}', [DeliveryController::class, 'show']);
+
+        // Support Tickets
+        Route::post('/support-tickets', [SupportTicketController::class, 'store']);
+        Route::get('/support-tickets', [SupportTicketController::class, 'index']);
+        Route::get('/support-tickets/{id}', [SupportTicketController::class, 'show']);
+
+        // Notifications
+        Route::get('/notifications', [DeviceTokenController::class, 'notifications']);
+        Route::get('/notifications/unread-count', [DeviceTokenController::class, 'unreadCount']);
+        Route::put('/notifications/{id}/read', [DeviceTokenController::class, 'markAsRead']);
+        Route::put('/notifications/read-all', [DeviceTokenController::class, 'markAllAsRead']);
     });
 
     /*
@@ -138,6 +152,12 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{delivery}/status', [DeliveryController::class, 'updateStatus']);
             Route::post('/{delivery}/assign', [DeliveryController::class, 'assignDriver']);
         });
+
+        // Notifications
+        Route::get('/notifications', [DeviceTokenController::class, 'notifications']);
+        Route::get('/notifications/unread-count', [DeviceTokenController::class, 'unreadCount']);
+        Route::put('/notifications/{id}/read', [DeviceTokenController::class, 'markAsRead']);
+        Route::put('/notifications/read-all', [DeviceTokenController::class, 'markAllAsRead']);
     });
 
     /*
@@ -184,7 +204,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/{order}', [OrderController::class, 'show']);
             Route::put('/{order}', [OrderController::class, 'update']);
             Route::delete('/{order}', [OrderController::class, 'destroy']);
-            Route::post('/{order}/confirm', [OrderController::class, 'confirm']);
         });
 
         // Delivery Management
@@ -203,6 +222,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Box Rental Management
         Route::apiResource('box-rentals', BoxRentalController::class);
+
+        // Support Ticket Management
+        Route::get('/support-tickets', [SupportTicketController::class, 'adminIndex']);
+        Route::get('/support-tickets/{id}', [SupportTicketController::class, 'adminShow']);
+        Route::put('/support-tickets/{id}', [SupportTicketController::class, 'adminUpdate']);
+        Route::delete('/support-tickets/{id}', [SupportTicketController::class, 'adminDestroy']);
+
+        // Notification Management
+        Route::post('/notifications', [NotificationController::class, 'store']);
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::get('/notifications/stats', [NotificationController::class, 'stats']);
+        Route::get('/notifications/{id}', [NotificationController::class, 'show']);
+        Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
 
         // Admin Profile (self-service)
         Route::prefix('profile')->group(function () {
@@ -225,4 +257,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [DeliveryController::class, 'index']);
         Route::get('/{delivery}', [DeliveryController::class, 'show']);
     });
+
+    // Device Token Management (accessible by retailer and driver)
+    Route::post('/device-tokens', [DeviceTokenController::class, 'store']);
+    Route::put('/device-tokens', [DeviceTokenController::class, 'update']);
+    Route::delete('/device-tokens', [DeviceTokenController::class, 'destroy']);
 });

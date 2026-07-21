@@ -13,6 +13,8 @@ use App\Models\Retailer;
 use App\Models\Order;
 use App\Models\JaniEmployee;
 use App\Models\Driver;
+use App\Models\DeviceToken;
+use App\Models\NotificationRecipient;
 
 
 class User extends Authenticatable
@@ -100,11 +102,25 @@ class User extends Authenticatable
         return $this->hasManyThrough(Order::class, Retailer::class);
     }
 
+    public function deviceTokens()
+    {
+        return $this->hasMany(DeviceToken::class);
+    }
+
+    public function notificationRecipients()
+    {
+        return $this->hasMany(NotificationRecipient::class);
+    }
+
       public function isAdmin(): bool
 {
     return $this->role === 'admin';
 }
 
+    public function hasRole(array $roles): bool
+    {
+        return in_array($this->role, $roles);
+    }
 }
 
     /**

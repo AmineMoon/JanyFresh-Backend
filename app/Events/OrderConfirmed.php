@@ -7,6 +7,10 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
+/**
+ * @deprecated No longer dispatched. Use OrderStatusUpdated instead.
+ * Kept for backwards compatibility with any remaining listeners.
+ */
 class OrderConfirmed implements ShouldBroadcast
 {
     use Dispatchable, SerializesModels;

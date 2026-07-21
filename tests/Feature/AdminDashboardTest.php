@@ -125,7 +125,7 @@ class AdminDashboardTest extends TestCase
 
         $order4 = Order::factory()->create([
             'retailer_id' => $retailer1->id,
-            'status' => 'confirmed',
+            'status' => 'available',
             'total' => 75.00,
             'delivery_fee' => 3.75,
         ]);

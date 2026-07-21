@@ -6,6 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class Delivery extends Model
 {
+    const STATUS_ASSIGNED = 'assigned';
+    const STATUS_PICKED_UP = 'picked_up';
+    const STATUS_IN_TRANSIT = 'in_transit';
+    const STATUS_DELIVERED = 'delivered';
+    const STATUS_FAILED = 'failed';
+    const STATUS_CANCELLED = 'cancelled';
+
     protected $fillable = [
         'order_id',
         'driver_id',
@@ -15,6 +22,7 @@ class Delivery extends Model
         'in_transit_at',
         'delivered_at',
         'notes',
+        'driver_earnings',
     ];
 
     protected $casts = [
@@ -37,6 +45,4 @@ class Delivery extends Model
     {
         return $this->belongsTo(User::class, 'assigned_by');
     }
-    
-    
 }

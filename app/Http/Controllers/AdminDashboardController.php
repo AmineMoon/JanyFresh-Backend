@@ -27,11 +27,12 @@ class AdminDashboardController extends Controller
             $orderStats = Order::selectRaw("
                 COUNT(*) AS total_orders,
                 SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_orders,
-                SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_orders,
-                SUM(CASE WHEN status = 'preparing' THEN 1 ELSE 0 END) AS preparing_orders,
+                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) AS available_orders,
+                SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_orders,
                 SUM(CASE WHEN status = 'out_for_delivery' THEN 1 ELSE 0 END) AS out_for_delivery_orders,
                 SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_orders,
                 SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_orders,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_orders,
                 COUNT(DISTINCT retailer_id) AS retailers_with_orders
             ")
             ->first();
@@ -75,11 +76,12 @@ class AdminDashboardController extends Controller
             $stats = [
                 'total_orders'           => (int) ($orderStats->total_orders ?? 0),
                 'pending_orders'         => (int) ($orderStats->pending_orders ?? 0),
-                'confirmed_orders'       => (int) ($orderStats->confirmed_orders ?? 0),
-                'preparing_orders'       => (int) ($orderStats->preparing_orders ?? 0),
+                'available_orders'       => (int) ($orderStats->available_orders ?? 0),
+                'assigned_orders'        => (int) ($orderStats->assigned_orders ?? 0),
                 'out_for_delivery_orders' => (int) ($orderStats->out_for_delivery_orders ?? 0),
                 'delivered_orders'       => (int) ($orderStats->delivered_orders ?? 0),
                 'cancelled_orders'       => (int) ($orderStats->cancelled_orders ?? 0),
+                'failed_orders'          => (int) ($orderStats->failed_orders ?? 0),
                 'retailers_with_orders'  => (int) ($orderStats->retailers_with_orders ?? 0),
                 'total_products'         => $totalProducts,
                 'total_retailers'        => $totalRetailers,

@@ -2,10 +2,19 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class Order extends Model
 {
+    const STATUS_PENDING = 'pending';
+    const STATUS_AVAILABLE = 'available';
+    const STATUS_ASSIGNED = 'assigned';
+    const STATUS_OUT_FOR_DELIVERY = 'out_for_delivery';
+    const STATUS_DELIVERED = 'delivered';
+    const STATUS_CANCELLED = 'cancelled';
+    const STATUS_FAILED = 'failed';
+
     protected $fillable = [
         'order_number',
         'retailer_id',
@@ -25,61 +34,66 @@ class Order extends Model
 
     protected $appends = ['can_cancel'];
 
-    /**
-     * Determine if the order can still be cancelled by the retailer
-     */
     public function getCanCancelAttribute(): bool
     {
-        return $this->status === 'pending' 
-            && $this->cancellation_deadline 
+        return $this->status === self::STATUS_PENDING
+            && $this->cancellation_deadline
             && now()->lessThan($this->cancellation_deadline);
     }
 
-    /**
-     * Retailer who created the order
-     */
     public function retailer()
     {
         return $this->belongsTo(Retailer::class, 'retailer_id');
     }
 
-    /**
-     * Assigned driver
-     */
     public function driver()
     {
         return $this->belongsTo(User::class, 'driver_id');
     }
 
-    /**
-     * Admin who confirmed order
-     */
     public function confirmedBy()
     {
         return $this->belongsTo(User::class, 'confirmed_by');
     }
 
-    /**
-     * Order items
-     */
     public function items()
     {
         return $this->hasMany(OrderItem::class);
     }
 
-    /**
-     * Delivery
-     */
     public function delivery()
     {
         return $this->hasOne(Delivery::class);
     }
 
-    /**
-     * Payment
-     */
     public function payment()
     {
         return $this->hasOne(Payment::class);
+    }
+
+    public function scopePending(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_PENDING);
+    }
+
+    public function scopeAvailable(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_AVAILABLE);
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->whereIn('status', [
+            self::STATUS_PENDING,
+            self::STATUS_AVAILABLE,
+            self::STATUS_ASSIGNED,
+            self::STATUS_OUT_FOR_DELIVERY,
+        ]);
+    }
+
+    public function scopeCancellable(Builder $query): Builder
+    {
+        return $query->pending()
+            ->whereColumn('cancellation_deadline', '>', now());
     }
 }

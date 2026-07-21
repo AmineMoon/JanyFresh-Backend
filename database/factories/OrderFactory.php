@@ -24,7 +24,7 @@ class OrderFactory extends Factory
         return [
             'order_number' => 'ORD-' . fake()->unique()->numerify('########'),
             'retailer_id' => $retailer->id,
-            'status' => fake()->randomElement(['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled']),
+            'status' => fake()->randomElement(['pending', 'available', 'assigned', 'out_for_delivery', 'delivered', 'cancelled', 'failed']),
             'subtotal' => fake()->randomFloat(2, 50, 500),
             'discount' => 0,
             'delivery_fee' =>fake()->randomFloat(2, 3, 15),
