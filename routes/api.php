@@ -20,6 +20,7 @@ use App\Http\Controllers\SubcategoryController;
 use App\Http\Controllers\SupportTicketController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\DeviceTokenController;
+use App\Http\Controllers\ExclusiveOfferController;
 
 /*
 |--------------------------------------------------------------------------
@@ -46,6 +47,10 @@ Route::get('/categories/active', [CategoryController::class, 'active']);
 Route::get('/categories/{category}', [CategoryController::class, 'show']);
 Route::get('/subcategories', [SubcategoryController::class, 'index']);
 Route::get('/subcategories/{subcategory}', [SubcategoryController::class, 'show']);
+
+// Public Exclusive Offers
+Route::get('/exclusive-offers', [ExclusiveOfferController::class, 'index']);
+Route::get('/exclusive-offers/{id}', [ExclusiveOfferController::class, 'show']);
 
 /*
 |--------------------------------------------------------------------------
@@ -75,6 +80,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | SHARED SUPPORT TICKET ROUTES (Retailer + Driver mobile apps)
+    |--------------------------------------------------------------------------
+    */
+
+    Route::post('/support-tickets', [SupportTicketController::class, 'store']);
+    Route::get('/support-tickets', [SupportTicketController::class, 'index']);
+    Route::get('/support-tickets/{id}', [SupportTicketController::class, 'show']);
+
+    /*
+    |--------------------------------------------------------------------------
     | RETAILER ROUTES
     |--------------------------------------------------------------------------
     */
@@ -84,7 +99,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Profile Management
         Route::prefix('profile')->group(function () {
             Route::get('/', [RetailerController::class, 'show']);
-            Route::put('/', [RetailerController::class, 'update']);
+            Route::match(['put', 'post'], '/', [RetailerController::class, 'update']);
             Route::delete('/', [RetailerController::class, 'destroy']);
         });
 
@@ -97,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', [OrderController::class, 'store']);
             Route::get('/{order}', [OrderController::class, 'show']);
             Route::post('/{order}/cancel', [OrderController::class, 'cancel']);
+            Route::post('/{order}/confirm', [OrderController::class, 'confirm']);
         });
 
         // Product Browsing
@@ -132,9 +148,12 @@ Route::middleware('auth:sanctum')->group(function () {
         // Profile Management
         Route::prefix('profile')->group(function () {
             Route::get('/', [DriverController::class, 'show']);
-            Route::put('/', [DriverController::class, 'update']);
+            Route::match(['put', 'post'], '/', [DriverController::class, 'update']);
             Route::delete('/', [DriverController::class, 'destroy']);
         });
+
+        // Home Dashboard
+        Route::get('/home', [DriverController::class, 'home']);
 
         // Order Management
         Route::prefix('orders')->group(function () {
@@ -152,6 +171,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{delivery}/status', [DeliveryController::class, 'updateStatus']);
             Route::post('/{delivery}/assign', [DeliveryController::class, 'assignDriver']);
         });
+
+        // Support Tickets
+        Route::post('/support-tickets', [SupportTicketController::class, 'store']);
+        Route::get('/support-tickets', [SupportTicketController::class, 'index']);
+        Route::get('/support-tickets/{id}', [SupportTicketController::class, 'show']);
 
         // Notifications
         Route::get('/notifications', [DeviceTokenController::class, 'notifications']);
@@ -227,6 +251,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/support-tickets', [SupportTicketController::class, 'adminIndex']);
         Route::get('/support-tickets/{id}', [SupportTicketController::class, 'adminShow']);
         Route::put('/support-tickets/{id}', [SupportTicketController::class, 'adminUpdate']);
+        Route::post('/support-tickets/{id}/respond', [SupportTicketController::class, 'adminRespond']);
         Route::delete('/support-tickets/{id}', [SupportTicketController::class, 'adminDestroy']);
 
         // Notification Management
@@ -235,6 +260,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/notifications/stats', [NotificationController::class, 'stats']);
         Route::get('/notifications/{id}', [NotificationController::class, 'show']);
         Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
+
+        // Exclusive Offer Management
+        Route::get('/exclusive-offers', [ExclusiveOfferController::class, 'adminIndex']);
+        Route::post('/exclusive-offers', [ExclusiveOfferController::class, 'store']);
+        Route::put('/exclusive-offers/{id}/toggle-status', [ExclusiveOfferController::class, 'toggleStatus']);
+        Route::get('/exclusive-offers/{id}', [ExclusiveOfferController::class, 'show']);
+        Route::put('/exclusive-offers/{id}', [ExclusiveOfferController::class, 'update']);
+        Route::delete('/exclusive-offers/{id}', [ExclusiveOfferController::class, 'destroy']);
 
         // Admin Profile (self-service)
         Route::prefix('profile')->group(function () {

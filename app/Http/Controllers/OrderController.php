@@ -8,6 +8,7 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Events\OrderStatusUpdated;
 use App\Events\OrderCancelled;
+use App\Events\OrderConfirmed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -15,19 +16,27 @@ use Illuminate\Support\Facades\Auth;
 class OrderController extends Controller
 {
     /**
-     * List all orders for the authenticated retailer
+     * List orders — all orders for admin, own orders for retailer
      */
     public function index()
     {
-        $orders = Order::with([
+        $query = Order::with([
             'retailer.user',
             'confirmedBy',
             'items.product.images',
             'items.product.primaryImage'
         ])
-        ->where('retailer_id', auth()->user()->retailer->id)
-        ->latest()
-        ->get();
+        ->latest();
+
+        if (auth()->user()->role !== 'admin') {
+            $query->where('retailer_id', auth()->user()->retailer->id);
+        }
+
+        if (request()->has('status') && request('status') !== '') {
+            $query->where('status', request('status'));
+        }
+
+        $orders = $query->get();
 
         return response()->json($orders);
     }
@@ -37,19 +46,25 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
-        $request->validate([
+        $isAdmin = auth()->user()->role === 'admin';
+
+        $request->validate(array_merge([
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
             'items.*.quantity' => 'required|integer|min:1',
-        ]);
+        ], $isAdmin ? ['retailer_id' => 'required|exists:retailers,id'] : []));
 
-        $order = DB::transaction(function () use ($request) {
+        $order = DB::transaction(function () use ($request, $isAdmin) {
 
             $subtotal = 0;
 
+            $retailerId = $isAdmin
+                ? $request->retailer_id
+                : auth()->user()->retailer->id;
+
             $order = Order::create([
                 'order_number' => 'ORD-' . time(),
-                'retailer_id' => auth()->user()->retailer->id,
+                'retailer_id' => $retailerId,
                 'status' => Order::STATUS_PENDING,
                 'cancellation_deadline' => now()->addMinutes(10),
                 'subtotal' => 0,
@@ -110,25 +125,35 @@ class OrderController extends Controller
     }
 
     /**
-     * Update order status
+     * Update order (admin)
      */
-    public function updateStatus(Request $request, Order $order)
+    public function update(Request $request, Order $order)
     {
         $request->validate([
-            'status' => 'required|in:pending,available,assigned,out_for_delivery,delivered,cancelled,failed'
+            'status' => 'sometimes|in:pending,available,assigned,out_for_delivery,delivered,cancelled,failed',
+            'discount' => 'sometimes|numeric|min:0',
+            'delivery_fee' => 'sometimes|numeric|min:0',
         ]);
 
         $previousStatus = $order->status;
 
-        $order->update([
-            'status' => $request->status
-        ]);
+        $data = $request->only(['status', 'discount', 'delivery_fee']);
 
-        OrderStatusUpdated::dispatch($order, $previousStatus);
+        if (isset($data['discount']) || isset($data['delivery_fee'])) {
+            $discount = $data['discount'] ?? $order->discount;
+            $deliveryFee = $data['delivery_fee'] ?? $order->delivery_fee;
+            $data['total'] = $order->subtotal + $deliveryFee - $discount;
+        }
+
+        $order->update($data);
+
+        if (isset($data['status']) && $data['status'] !== $previousStatus) {
+            OrderStatusUpdated::dispatch($order->fresh(), $previousStatus);
+        }
 
         return response()->json([
-            'message' => 'Status updated successfully',
-            'order' => $order
+            'message' => 'Order updated successfully',
+            'order' => $order->fresh()->load(['items.product', 'retailer.user']),
         ]);
     }
 
@@ -394,22 +419,47 @@ class OrderController extends Controller
             return response()->json(['message' => 'Order cannot be cancelled at this stage'], 422);
         }
 
-        if (!$order->cancellation_deadline || now()->greaterThan($order->cancellation_deadline)) {
-            return response()->json(['message' => 'Cancellation window has expired'], 422);
-        }
-
         $orderId = $order->id;
-        $orderNumber = $order->order_number;
 
         $orderForBroadcast = $order->fresh()->load('items.product');
 
-        $order->update(['status' => Order::STATUS_CANCELLED]);
-
         OrderCancelled::dispatch($orderForBroadcast, auth()->user()->name);
 
+        $order->delete();
+
         return response()->json([
-            'message' => 'Order cancelled successfully',
+            'message' => 'Order deleted successfully',
             'order_id' => $orderId,
+        ]);
+    }
+
+    /**
+     * Confirm order as available (retailer) — skip the 10-minute cancellation window
+     */
+    public function confirm(Request $request, Order $order)
+    {
+        $user = auth()->user();
+
+        if ($order->retailer_id !== $user->retailer->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($order->status !== Order::STATUS_PENDING) {
+            return response()->json(['message' => 'Only pending orders can be confirmed'], 422);
+        }
+
+        $previousStatus = $order->status;
+
+        $order->update([
+            'status' => Order::STATUS_AVAILABLE,
+            'cancellation_deadline' => null,
+        ]);
+
+        OrderStatusUpdated::dispatch($order->fresh()->load('items.product'), $previousStatus);
+
+        return response()->json([
+            'message' => 'Order confirmed and is now available for drivers',
+            'order' => $order->fresh()->load(['items.product', 'retailer.user', 'confirmedBy']),
         ]);
     }
 }

@@ -31,8 +31,9 @@ class SupportTicketController extends Controller
         $ticket = SupportTicket::create($validated);
 
         return response()->json([
+            'success' => true,
             'message' => 'Support ticket created successfully',
-            'ticket' => $ticket,
+            'data' => $ticket,
         ], 201);
     }
 
@@ -41,11 +42,25 @@ class SupportTicketController extends Controller
      */
     public function index(Request $request)
     {
-        $tickets = SupportTicket::where('user_id', $request->user()->id)
-            ->latest()
-            ->paginate($request->get('per_page', 15));
+        $query = SupportTicket::where('user_id', $request->user()->id);
 
-        return response()->json($tickets);
+        $status = $request->get('status');
+        if ($status) {
+            $query->byStatus($status);
+        }
+
+        $tickets = $query->latest()->paginate($request->get('per_page', 15));
+
+        return response()->json([
+            'success' => true,
+            'data' => $tickets->items(),
+            'pagination' => [
+                'current_page' => $tickets->currentPage(),
+                'last_page' => $tickets->lastPage(),
+                'per_page' => $tickets->perPage(),
+                'total' => $tickets->total(),
+            ],
+        ]);
     }
 
     /**
@@ -62,7 +77,10 @@ class SupportTicketController extends Controller
             return response()->json(['message' => 'Ticket not found'], 404);
         }
 
-        return response()->json($ticket);
+        return response()->json([
+            'success' => true,
+            'data' => $ticket,
+        ]);
     }
 
     /**
@@ -80,6 +98,12 @@ class SupportTicketController extends Controller
             $query->byCategory($request->category);
         }
 
+        if ($request->has('user_type') && $request->user_type !== '') {
+            $query->whereHas('user', function ($q) use ($request) {
+                $q->where('role', $request->user_type);
+            });
+        }
+
         if ($request->has('search') && $request->search !== '') {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -93,7 +117,16 @@ class SupportTicketController extends Controller
 
         $tickets = $query->paginate($request->get('per_page', 15));
 
-        return response()->json($tickets);
+        return response()->json([
+            'success' => true,
+            'data' => $tickets->items(),
+            'pagination' => [
+                'current_page' => $tickets->currentPage(),
+                'last_page' => $tickets->lastPage(),
+                'per_page' => $tickets->perPage(),
+                'total' => $tickets->total(),
+            ],
+        ]);
     }
 
     /**
@@ -103,7 +136,10 @@ class SupportTicketController extends Controller
     {
         $ticket = SupportTicket::with(['user', 'respondedBy'])->findOrFail($id);
 
-        return response()->json($ticket);
+        return response()->json([
+            'success' => true,
+            'data' => $ticket,
+        ]);
     }
 
     /**
@@ -129,8 +165,38 @@ class SupportTicketController extends Controller
         $ticket->save();
 
         return response()->json([
+            'success' => true,
             'message' => 'Ticket updated successfully',
-            'ticket' => $ticket->load(['user', 'respondedBy']),
+            'data' => $ticket->load(['user', 'respondedBy']),
+        ]);
+    }
+
+    /**
+     * Admin: Add a response to a support ticket.
+     */
+    public function adminRespond(Request $request, $id)
+    {
+        $ticket = SupportTicket::findOrFail($id);
+
+        $validated = $request->validate([
+            'admin_response' => 'required|string',
+            'status' => 'nullable|in:open,in_progress,resolved,closed',
+        ]);
+
+        $ticket->admin_response = $validated['admin_response'];
+        $ticket->responded_by = $request->user()->id;
+        $ticket->responded_at = now();
+
+        if (isset($validated['status'])) {
+            $ticket->status = $validated['status'];
+        }
+
+        $ticket->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Response saved successfully',
+            'data' => $ticket->load(['user', 'respondedBy']),
         ]);
     }
 
@@ -147,6 +213,9 @@ class SupportTicketController extends Controller
 
         $ticket->delete();
 
-        return response()->json(['message' => 'Ticket deleted successfully']);
+        return response()->json([
+            'success' => true,
+            'message' => 'Ticket deleted successfully',
+        ]);
     }
 }

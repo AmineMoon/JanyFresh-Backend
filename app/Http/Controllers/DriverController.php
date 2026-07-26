@@ -3,9 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Driver;
+use App\Models\Delivery;
 use Illuminate\Http\Request;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
 
 class DriverController extends Controller
 {
@@ -59,11 +62,18 @@ class DriverController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $driver = $authUser->driver;
+        if (!$driver) {
+            $driver = $authUser->driver()->create([
+                'status' => 'available',
+            ]);
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
                 'user' => $authUser,
-                'driver' => $authUser->driver
+                'driver' => $driver
             ]
         ]);
     }
@@ -89,24 +99,35 @@ class DriverController extends Controller
 
         $driver = $user->driver;
         if (!$driver) {
-            return response()->json(['message' => 'Driver profile not found'], 404);
+            $driver = $user->driver()->create([
+                'status' => 'available',
+            ]);
         }
 
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'password' => 'sometimes|string|min:6',
-            'phone' => 'sometimes|string|max:20',
-            'vehicle_type' => 'sometimes|string|max:255',
-            'license_number' => 'sometimes|string|unique:drivers,license_number,' . $driver->id,
+            'name' => 'sometimes|nullable|string|max:255',
+            'email' => 'sometimes|nullable|email|unique:users,email,' . $user->id,
+            'password' => 'sometimes|nullable|string|min:6',
+            'phone' => 'sometimes|nullable|string|max:20',
+            'vehicle_type' => 'sometimes|nullable|string|max:255',
+            'license_number' => 'sometimes|nullable|string|unique:drivers,license_number,' . $driver->id,
             'current_location' => 'sometimes|nullable|string|max:255',
             'is_available' => 'sometimes|boolean',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
         if (isset($validated['name'])) $user->name = $validated['name'];
         if (isset($validated['email'])) $user->email = $validated['email'];
         if (isset($validated['phone'])) $user->phone = $validated['phone'];
         if (isset($validated['password'])) $user->password = Hash::make($validated['password']);
+
+        if ($request->hasFile('image')) {
+            if ($user->image && Storage::disk('public')->exists($user->image)) {
+                Storage::disk('public')->delete($user->image);
+            }
+            $user->image = $request->file('image')->store('users', 'public');
+        }
+
         $user->save();
 
         if (isset($validated['vehicle_type'])) $driver->vehicle_type = $validated['vehicle_type'];
@@ -124,6 +145,75 @@ class DriverController extends Controller
                 'user' => $user,
                 'driver' => $driver,
             ],
+        ]);
+    }
+
+    /**
+     * Get driver home dashboard data
+     */
+    public function home()
+    {
+        $user = Auth::user();
+        $driver = $user->driver;
+
+        if (!$driver) {
+            return response()->json(['message' => 'Driver profile not found.'], 404);
+        }
+
+        $deliveries = Delivery::where('driver_id', $driver->id);
+
+        $statusCounts = (clone $deliveries)
+            ->selectRaw("
+                SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS total_completed,
+                SUM(CASE WHEN status IN ('assigned', 'picked_up') THEN 1 ELSE 0 END) AS total_pending,
+                SUM(CASE WHEN status = 'in_transit' THEN 1 ELSE 0 END) AS total_in_transit
+            ")
+            ->first();
+
+        $earnings = (clone $deliveries)
+            ->where('status', 'delivered')
+            ->selectRaw("
+                COALESCE(SUM(driver_earnings), 0) AS total_earnings,
+                COALESCE(SUM(CASE WHEN DATE(delivered_at) = CURDATE() THEN driver_earnings ELSE 0 END), 0) AS today_earnings,
+                COALESCE(SUM(CASE WHEN YEARWEEK(delivered_at, 1) = YEARWEEK(CURDATE(), 1) THEN driver_earnings ELSE 0 END), 0) AS this_week_earnings,
+                COALESCE(SUM(CASE WHEN MONTH(delivered_at) = MONTH(CURDATE()) AND YEAR(delivered_at) = YEAR(CURDATE()) THEN driver_earnings ELSE 0 END), 0) AS this_month_earnings
+            ")
+            ->first();
+
+        $periodCounts = (clone $deliveries)
+            ->where('status', 'delivered')
+            ->selectRaw("
+                SUM(CASE WHEN DATE(delivered_at) = CURDATE() THEN 1 ELSE 0 END) AS today_completed,
+                SUM(CASE WHEN YEARWEEK(delivered_at, 1) = YEARWEEK(CURDATE(), 1) THEN 1 ELSE 0 END) AS this_week_completed,
+                SUM(CASE WHEN MONTH(delivered_at) = MONTH(CURDATE()) AND YEAR(delivered_at) = YEAR(CURDATE()) THEN 1 ELSE 0 END) AS this_month_completed
+            ")
+            ->first();
+
+        $recentDeliveries = Delivery::where('driver_id', $driver->id)
+            ->where('status', 'delivered')
+            ->with('order:id,order_number')
+            ->latest('delivered_at')
+            ->limit(5)
+            ->get()
+            ->map(fn ($d) => [
+                'order_number' => $d->order->order_number,
+                'delivered_at' => $d->delivered_at,
+                'driver_earnings' => $d->driver_earnings,
+                'status' => $d->status,
+            ]);
+
+        return response()->json([
+            'total_completed_deliveries' => (int) $statusCounts->total_completed,
+            'total_pending_deliveries' => (int) $statusCounts->total_pending,
+            'total_in_transit_deliveries' => (int) $statusCounts->total_in_transit,
+            'total_earnings' => (float) $earnings->total_earnings,
+            'today_earnings' => (float) $earnings->today_earnings,
+            'this_week_earnings' => (float) $earnings->this_week_earnings,
+            'this_month_earnings' => (float) $earnings->this_month_earnings,
+            'today_completed_deliveries' => (int) $periodCounts->today_completed,
+            'this_week_completed_deliveries' => (int) $periodCounts->this_week_completed,
+            'this_month_completed_deliveries' => (int) $periodCounts->this_month_completed,
+            'recent_deliveries' => $recentDeliveries,
         ]);
     }
 
@@ -151,6 +241,11 @@ class DriverController extends Controller
         if ($driver) {
             $driver->delete();
         }
+
+        if ($user->image && Storage::disk('public')->exists($user->image)) {
+            Storage::disk('public')->delete($user->image);
+        }
+
         $user->delete();
 
         return response()->json([

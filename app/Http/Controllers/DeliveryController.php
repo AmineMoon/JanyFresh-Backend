@@ -423,6 +423,12 @@ class DeliveryController extends Controller
 
                 case Delivery::STATUS_DELIVERED:
                     $updateData['delivered_at'] = now();
+
+                    if (!$delivery->driver_earnings || $delivery->driver_earnings == 0) {
+                        $earningsPercentage = 1.0;
+                        $updateData['driver_earnings'] = $delivery->order->delivery_fee * $earningsPercentage;
+                    }
+
                     $delivery->order->update([
                         'status' => Order::STATUS_DELIVERED
                     ]);
